@@ -1,0 +1,4 @@
+requests~=2.26.0
+azure~=4.0.0
+msrest~=0.6.21
+jsonpath~=0.82
