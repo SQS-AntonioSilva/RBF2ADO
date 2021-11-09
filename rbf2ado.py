@@ -1,9 +1,13 @@
+import xml
+
 import requests
 import json
 import jsonpath
 import names # for test purposes
 from datetime import datetime
 import argparse
+from bs4 import BeautifulSoup
+import xml
 
 parser = argparse.ArgumentParser()
 parser.add_argument("org", help="Name of the the organization ")
@@ -28,6 +32,7 @@ suitename = "Teste Realese 14"
 testcaseid = "88"
 status = "passed"
 url_base = api_url + "/" + organization + "/" + project
+
 
 
 def get_testplan_details():
@@ -142,7 +147,6 @@ def update_result(status):
                       '","state": "Completed",' \
                       '"comment": "Execution Failed"' \
                       '}]'
-
         payloadJson = json.loads(payload)
         resp = requests.patch(url=url, json=payloadJson, auth=(username, pat),
                               headers={'Content-Type': 'application/json'})
@@ -150,33 +154,71 @@ def update_result(status):
     except Exception as e:
         print('Something went wrong in updating Test Results :' + str(e))
 
+def add_parent_link(userstory):
+    parent_xml = '{' \
+        '"op": "add",' \
+        '"path": "/relations/-",' \
+        '"value": {' \
+        '"rel": "Microsoft.VSTS.Common.TestedBy-Reverse",' \
+        '"url": "' + url_base + \
+        '/_apis/wit/workItems/' + userstory + '",' \
+        '"attributes": {' \
+                                              '"comment": "Create with Robot framework Sync"' \
+                                              '}' \
+        '}' \
+        '}'
+    return parent_xml
 
-def create_test_case(testcaseName, Userstoryid):
+# "System.Tags": "Demo; US:103; Webapp"
+def add_tags(tags):
+    parent_xml = '{' \
+            '"op": "add",' \
+            '"path": "/fields/System.Tags",' \
+            '"from": null,' \
+            '"value": "' + tags + '"}'
+    return parent_xml
+
+
+def add_test_status():
+    parent_xml = '{' \
+            '"op": "add",' \
+            '"path": "/fields/Microsoft.VSTS.TCM.AutomationStatus",' \
+            '"from": null,' \
+            '"value": "Planned"}'
+    return parent_xml
+
+def add_test_steps():
+    parent_xml = '{' \
+            '"op": "add",' \
+            '"path": "/fields/Microsoft.VSTS.TCM.Steps",' \
+            '"from": null,' \
+            '"value": "<steps id=\'0\' last=\'5\'>' \
+                 '<step id=\'2\' type=\'ValidateStep\'>' \
+                 '<parameterizedString isformatted=\'true\'>' \
+                 '&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;B&gt;Given &lt;/B&gt;Step 01  &lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</parameterizedString>' \
+                 '<parameterizedString isformatted=\'true\'>&lt;DIV&gt;&lt;P&gt;Expect 01&lt;/P&gt;&lt;/DIV&gt;</parameterizedString>' \
+                 '<description/>' \
+                 '</step>"' \
+            '}'
+    return parent_xml
+
+
+def add_test_title(testcaseName):
+    parent_xml = '{' \
+            '"op": "add",' \
+            '"path": "/fields/System.Title",' \
+            '"from": null,' \
+            '"value": "' + testcaseName + '"}'
+    return parent_xml
+
+
+def create_test_case(new_test_case):
     try:
-        title = testcaseName
-        tests = Userstoryid
+        # title = testcaseName
+        # tests = Userstoryid
         url = url_base + \
-              "/_apis/wit/workitems/$Test%20Case?api-version=5.0"
-        payload = '[{' \
-                  '"op": "add",' \
-                  '"path": "/fields/System.Title",' \
-                  '"from": null,' \
-                  '"value": "' + title + '"}' \
-                ',{' \
-                    '"op": "add",' \
-                    '"path": "/fields/Microsoft.VSTS.TCM.AutomationStatus",' \
-                    '"from": null,' \
-                    '"value": "Planned"}' \
-                 ',{' \
-                    '"op": "add",' \
-                    '"path": "/relations/-",' \
-                    '"value": {' \
-                    '"rel": "Microsoft.VSTS.Common.TestedBy-Reverse",' \
-                    '"url": "' + url_base + '/_apis/wit/workItems/' + Userstoryid + '",' \
-                    '"attributes": {' \
-                    '"comment": "Test de Child"}' \
-                 '}' \
-                 '}]'
+            "/_apis/wit/workitems/$Test%20Case?api-version=5.0"
+        payload = new_test_case
         payloadJson = json.loads(payload)
         response = requests.post(url=url, json=payloadJson, auth=(username, pat),
                                  headers={'Content-Type': 'application/json-patch+json'})
@@ -186,12 +228,51 @@ def create_test_case(testcaseName, Userstoryid):
         return str(testcaseId)
     except Exception as e:
         print('Something went wrong in creating Test Case :' + str(e))
+        print(payload)
+
+
+def read_xml_report():
+    f = open("output.xml", "r")
+    lines = f.read()
+    # print(lines)
+    soup = BeautifulSoup(lines, 'xml')
+    # test_titles = soup.find_all('test')
+    #
+    # print(soup.suite['id'])
+    # for suite in test_titles:
+    #     print(suite)
+
+    return soup
 
 
 if operation == "create":
-    randomtxt = rand_name = names.get_full_name(gender='female')  # for test purpose
-    testcaseName = "TC: " + randomtxt
-    Userstoryid = "108"
-    create_test_case(testcaseName, Userstoryid)
+    # randomtxt = rand_name = names.get_full_name(gender='female')  # for test purpose
+    # testcaseName = "TC: " + randomtxt
+    # Userstoryid = "108"
+    report = read_xml_report()
+    test_cases = report.find_all('test')
+    # index = 1
+    for test_case in test_cases:
+        # index = index + 1
+        new_test_case = "["
+        tags = "Test Automated"
+        test_tags = test_case.find_all('tag')
+        if test_tags != "":
+            for test_tag in test_tags:
+                if "US:" in test_tag.string:
+                    print(test_tag.string)
+                    userstory = test_tag.string[3:]
+                    new_test_case = new_test_case + add_parent_link(userstory)
+                    tags = tags + ";" + test_tag.string
+                else:
+                    tags = tags + ";" + test_tag.string
+            # new_test_case.add(add_tags(tags))
+            print(tags)
+        new_test_case = new_test_case + "," + add_test_title(test_case["name"])
+        new_test_case = new_test_case + "," + add_tags(tags)
+        new_test_case = new_test_case + "," + add_test_status()
+        # new_test_case = new_test_case + "," + add_test_steps()
+        new_test_case = new_test_case + "]"
+        create_test_case(new_test_case)
 else:
     update_result(status.upper())
