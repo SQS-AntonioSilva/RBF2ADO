@@ -25,7 +25,7 @@ organization = args.org
 project = args.proj
 operation = args.oper
 # pat = args.pat
-pat = 'z3xfvcbxffxnkt6e4er3rowipnboy6v7nhsab45ni3dndn7jtxua'
+pat = 'zaxgv5p7zh63bhp4owmkn672u5vjlnmwi665frz56sxtvkro5owq'
 
 planName = "Teste Realese 14"
 suitename = "Teste Realese 14"
@@ -187,6 +187,7 @@ def add_test_status():
             '"value": "Planned"}'
     return parent_xml
 
+
 def add_test_steps():
     parent_xml = '{' \
             '"op": "add",' \
@@ -212,67 +213,119 @@ def add_test_title(testcaseName):
     return parent_xml
 
 
-def create_test_case(new_test_case):
-    try:
-        # title = testcaseName
-        # tests = Userstoryid
+def add_test_description(test_description):
+    test_description_json = '{' \
+            '"op": "add",' \
+            '"path": "/fields/System.Description",' \
+            '"from": null,' \
+            '"value": "' + test_description + '"}'
+    return test_description_json
+
+
+def create_test_case(add_test_case):
+    # try:
         url = url_base + \
-            "/_apis/wit/workitems/$Test%20Case?api-version=5.0"
-        payload = new_test_case
-        payloadJson = json.loads(payload)
-        response = requests.post(url=url, json=payloadJson, auth=(username, pat),
+            "/_apis/wit/workitems/$Test%20Case?api-version=6.1-preview.3"
+        payload = add_test_case
+        payloadjson = json.loads(payload)
+        response = requests.post(url=url, json=payloadjson, auth=(username, pat),
                                  headers={'Content-Type': 'application/json-patch+json'})
+        print(response)
         responsejson = json.loads(response.text)
         testcaseId = jsonpath.jsonpath(responsejson, "$.id")[0]
         print(testcaseId)
         return str(testcaseId)
-    except Exception as e:
-        print('Something went wrong in creating Test Case :' + str(e))
-        print(payload)
+    # except Exception as e:
+    #     print('Something went wrong in creating Test Case :' + str(e))
+    #     print(payload)
+
+
+def update_test_case(update_test_case,test_case_id):
+    # try:
+        url = url_base + \
+            "/_apis/wit/workitems/"+test_case_id+"?api-version=6.1-preview.3"
+        payload = update_test_case
+        payloadjson = json.loads(payload)
+        response = requests.patch(url=url, json=payloadjson, auth=(username, pat),
+                                  headers={'Content-Type': 'application/json-patch+json'})
+        responsejson = json.loads(response.text)
+        testcaseId = jsonpath.jsonpath(responsejson, "$.id")[0]
+        print("Test case: " + str(testcaseId))
+        return str(testcaseId)
+    # except Exception as e:
+    #     print('Something went wrong in creating Test Case :' + str(e))
+    #     print(payload)
 
 
 def read_xml_report():
-    f = open("output.xml", "r")
+    f = open("output.xml", "r", encoding="utf-8")
     lines = f.read()
-    # print(lines)
     soup = BeautifulSoup(lines, 'xml')
-    # test_titles = soup.find_all('test')
-    #
-    # print(soup.suite['id'])
-    # for suite in test_titles:
-    #     print(suite)
-
     return soup
 
 
-if operation == "create":
-    # randomtxt = rand_name = names.get_full_name(gender='female')  # for test purpose
-    # testcaseName = "TC: " + randomtxt
-    # Userstoryid = "108"
-    report = read_xml_report()
-    test_cases = report.find_all('test')
-    # index = 1
+def read_test_cases(json_report):
+    test_cases = json_report.find_all('test')
     for test_case in test_cases:
-        # index = index + 1
-        new_test_case = "["
+        testcaseid = None
+        test_to_update = False
+
+        # Add Test case title and initialise json
+        test_case_name = test_case["name"]
+        test_case_json = "["
+        test_case_json = test_case_json + add_test_title(test_case_name)
+
+        # Add Tags to Test Case
+        # Search for user story id
+        # If tag TC: exists update test case
         tags = "Test Automated"
         test_tags = test_case.find_all('tag')
-        if test_tags != "":
+        if test_tags is not None:
             for test_tag in test_tags:
                 if "US:" in test_tag.string:
-                    print(test_tag.string)
                     userstory = test_tag.string[3:]
-                    new_test_case = new_test_case + add_parent_link(userstory)
+                    test_case_json = test_case_json + "," + add_parent_link(userstory)
+                    tags = tags + ";" + test_tag.string
+                elif "TC:" in test_tag.string:
+                    test_to_update = True
+                    testcaseid = test_tag.string[3:]
                     tags = tags + ";" + test_tag.string
                 else:
                     tags = tags + ";" + test_tag.string
-            # new_test_case.add(add_tags(tags))
-            print(tags)
-        new_test_case = new_test_case + "," + add_test_title(test_case["name"])
-        new_test_case = new_test_case + "," + add_tags(tags)
-        new_test_case = new_test_case + "," + add_test_status()
-        # new_test_case = new_test_case + "," + add_test_steps()
-        new_test_case = new_test_case + "]"
-        create_test_case(new_test_case)
+            # print(tags)
+        test_case_json = test_case_json + "," + add_tags(tags)
+
+        # Add test status = Pending
+        test_case_json = test_case_json + "," + add_test_status()
+
+        # Add Summary to TC
+        summary = ""
+        test_description = test_case.find_all('doc', recursive=False)
+
+        if test_description != "":
+            for doc in test_description:
+                print(doc.string)
+                summary = summary + "<br>" + doc.string
+            test_case_json = test_case_json + "," + add_test_description(summary)
+
+
+        # Add steps
+        summary = ""
+        test_step = test_case.find_all('kw', recursive=False)
+        print(test_step)
+        # test_case_json = test_case_json + "," + add_test_steps(test_step)
+
+        # Close json format
+        test_case_json = test_case_json + "]"
+        if test_to_update:
+            update_test_case(test_case_json, testcaseid)
+        else:
+            create_test_case(test_case_json)
+
+
+if operation == "create":
+    report = read_xml_report()
+    read_test_cases(report)
+    # create_test_case(test_cases_json)
 else:
     update_result(status.upper())
