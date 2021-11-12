@@ -1,13 +1,14 @@
-import xml
-
 import requests
 import json
 import jsonpath
-import names # for test purposes
 from datetime import datetime
 import argparse
 from bs4 import BeautifulSoup
-import xml
+
+# TODO: - Reavaliar pat
+# TODO: - criar libs
+# TODO: - Refactoring da criação de json
+# TODO: - Unit Testing para as funções
 
 parser = argparse.ArgumentParser()
 parser.add_argument("org", help="Name of the the organization ")
@@ -26,6 +27,8 @@ project = args.proj
 operation = args.oper
 # pat = args.pat
 pat = 'zaxgv5p7zh63bhp4owmkn672u5vjlnmwi665frz56sxtvkro5owq'
+api_version = "6.0-preview.6"
+xml_report = "output.xml"
 
 planName = "Teste Realese 14"
 suitename = "Teste Realese 14"
@@ -37,7 +40,7 @@ url_base = api_url + "/" + organization + "/" + project
 
 def get_testplan_details():
     try:
-        url = url_base + "/_apis/test/plans?api-version=5.0"
+        url = url_base + "/_apis/test/plans?api-version=" + api_version
         response = requests.get(url=url, auth=(username, pat))
         reponsejson = json.loads(response.text)
         planid = jsonpath.jsonpath(reponsejson, "$.value.[?(@.name == '" + planName + "')].id")[0]
@@ -52,7 +55,7 @@ def get_testsuite_details():
         plandetails = get_testplan_details()
         url = url_base + \
               "/_apis/test/plans/" + plandetails[0] + \
-              "/suites?api-version=5.0"
+              "/suites?api-version=" + api_version
         response = requests.get(url=url, auth=(username, pat))
         reponsejson = json.loads(response.text)
         suiteID = jsonpath.jsonpath(reponsejson, "$.value.[?(@.name == '" + suitename + "')].id")[0]
@@ -68,7 +71,7 @@ def get_testcase_id():
         url = url_base + \
               "/_apis/test/plans/" + planid + \
               "/suites/" + suiteid + \
-              "/points?api-version=5.0"
+              "/points?api-version=" + api_version
         print(url)
         response = requests.get(url=url, auth=(username, pat))
         reponsejson = json.loads(response.text)
@@ -87,7 +90,7 @@ def get_testpoint_ID():
               "/_apis/test/plans/" + planid + \
               "/suites/" + suiteid + \
               "/points?testCaseId=" + tcid + \
-              "&api-version=5.0"
+              "&api-version=" + api_version
         response = requests.get(url=url, auth=(username, pat))
         reponsejson = json.loads(response.text)
         testpointid = jsonpath.jsonpath(reponsejson, "$.value.[0].id")[0]
@@ -102,7 +105,7 @@ def create_run():
         planID = get_testplan_details()[0]
         pointID = get_testpoint_ID()
         url = url_base + \
-              "/_apis/test/runs?api-version=5.0"
+              "/_apis/test/runs?api-version=" + api_version
         payload = '{"name":"' + runName + '","plan":{"id":' + planID + '},"pointIds":[' + pointID + ']}'
         payloadJson = json.loads(payload)
         response = requests.post(url=url, json=payloadJson, auth=(username, pat),
@@ -119,13 +122,14 @@ def get_testResult_ID():
         runID = create_run()
         url = url_base + \
               "/_apis/test/runs/" + runID + \
-              "/results?api-version=6.0-preview.6"
+              "/results?api-version=" + api_version
         response = requests.get(url=url, auth=(username, pat))
         reponsejson = json.loads(response.text)
         resultID = jsonpath.jsonpath(reponsejson, "$.value.[0].id")[0]
         return str(resultID), runID
     except Exception as e:
         print('Something went wrong in fetching Result ID :' + str(e))
+
 
 def update_result(status):
     try:
@@ -134,7 +138,7 @@ def update_result(status):
         runid = resultdata[1]
         url = url_base + \
               "/_apis/test/runs/" + runid + \
-              "/results?api-version=6.0-preview.6"
+              "/results?api-version=" + api_version
         if (status == 'PASSED'):
             payload = '[{ "id": ' + resultid + ',' \
                                                '"outcome": "' + status + '" ,' \
@@ -169,7 +173,7 @@ def add_parent_link(userstory):
         '}'
     return parent_xml
 
-# "System.Tags": "Demo; US:103; Webapp"
+
 def add_tags(tags):
     parent_xml = '{' \
             '"op": "add",' \
@@ -188,20 +192,21 @@ def add_test_status():
     return parent_xml
 
 
-def add_test_steps():
+def add_test_steps(steps):
     parent_xml = '{' \
             '"op": "add",' \
             '"path": "/fields/Microsoft.VSTS.TCM.Steps",' \
             '"from": null,' \
-            '"value": "<steps id=\'0\' last=\'5\'>' \
-                 '<step id=\'2\' type=\'ValidateStep\'>' \
-                 '<parameterizedString isformatted=\'true\'>' \
-                 '&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;B&gt;Given &lt;/B&gt;Step 01  &lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</parameterizedString>' \
-                 '<parameterizedString isformatted=\'true\'>&lt;DIV&gt;&lt;P&gt;Expect 01&lt;/P&gt;&lt;/DIV&gt;</parameterizedString>' \
-                 '<description/>' \
-                 '</step>"' \
+            '"value": "<steps id=\\\"0\\\" last=\\\"4\\\">' + steps + '</steps>"' \
             '}'
     return parent_xml
+
+def add_step_to_steps(id, step):
+    step_format = '<step id=\\\"' + str(id) + '\\\" type=\\\"ActionStep\\\">' \
+        '<parameterizedString isformatted=\\\"true\\\">&lt;DIV&gt;&lt;P&gt;' + step + '&lt;/P&gt;&lt;/DIV&gt;</parameterizedString>' \
+        '<parameterizedString isformatted=\\\"true\\\">&lt;DIV&gt;&lt;P&gt;&lt;BR/&gt;&lt;/P&gt;&lt;/DIV&gt;</parameterizedString><description/>' \
+        '</step>'
+    return step_format
 
 
 def add_test_title(testcaseName):
@@ -223,9 +228,9 @@ def add_test_description(test_description):
 
 
 def create_test_case(add_test_case):
-    # try:
+    try:
         url = url_base + \
-            "/_apis/wit/workitems/$Test%20Case?api-version=6.1-preview.3"
+            "/_apis/wit/workitems/$Test%20Case?api-version=" + api_version
         payload = add_test_case
         payloadjson = json.loads(payload)
         response = requests.post(url=url, json=payloadjson, auth=(username, pat),
@@ -235,15 +240,14 @@ def create_test_case(add_test_case):
         testcaseId = jsonpath.jsonpath(responsejson, "$.id")[0]
         print(testcaseId)
         return str(testcaseId)
-    # except Exception as e:
-    #     print('Something went wrong in creating Test Case :' + str(e))
-    #     print(payload)
+    except Exception as e:
+        print('Something went wrong in creating Test Case :' + str(e))
 
 
 def update_test_case(update_test_case,test_case_id):
-    # try:
+    try:
         url = url_base + \
-            "/_apis/wit/workitems/"+test_case_id+"?api-version=6.1-preview.3"
+            "/_apis/wit/workitems/"+test_case_id+"?api-version=" + api_version
         payload = update_test_case
         payloadjson = json.loads(payload)
         response = requests.patch(url=url, json=payloadjson, auth=(username, pat),
@@ -252,19 +256,21 @@ def update_test_case(update_test_case,test_case_id):
         testcaseId = jsonpath.jsonpath(responsejson, "$.id")[0]
         print("Test case: " + str(testcaseId))
         return str(testcaseId)
-    # except Exception as e:
-    #     print('Something went wrong in creating Test Case :' + str(e))
-    #     print(payload)
+    except Exception as e:
+        print('Something went wrong in Update Test Case :' + str(e))
 
 
 def read_xml_report():
-    f = open("output.xml", "r", encoding="utf-8")
+    f = open(xml_report, "r", encoding="utf-8")
     lines = f.read()
     soup = BeautifulSoup(lines, 'xml')
     return soup
 
 
 def read_test_cases(json_report):
+    # TODO: - Validar se Teste já existe, se já existe faz Update senão faz create
+    # TODO: - Não permitir alteração a testes que estejam fechados
+    # TODO: - Criar ficheiro log com resultado da execução
     test_cases = json_report.find_all('test')
     for test_case in test_cases:
         testcaseid = None
@@ -304,20 +310,27 @@ def read_test_cases(json_report):
 
         if test_description != "":
             for doc in test_description:
-                print(doc.string)
-                summary = summary + "<br>" + doc.string
+                summary = doc.string
             test_case_json = test_case_json + "," + add_test_description(summary)
 
 
         # Add steps
-        summary = ""
-        test_step = test_case.find_all('kw', recursive=False)
-        print(test_step)
-        # test_case_json = test_case_json + "," + add_test_steps(test_step)
+        steps = ""
+        test_steps = test_case.find_all('kw', recursive=False)
+        if test_steps != "":
+            step_id = 2
+            for step in test_steps:
+                steps = steps + add_step_to_steps(step_id, step["name"])
+                step_id = step_id + 1
+            print(steps)
+            test_case_json = test_case_json + "," + add_test_steps(steps)
+
 
         # Close json format
         test_case_json = test_case_json + "]"
+
         if test_to_update:
+            print(test_case_json)
             update_test_case(test_case_json, testcaseid)
         else:
             create_test_case(test_case_json)
@@ -329,3 +342,6 @@ if operation == "create":
     # create_test_case(test_cases_json)
 else:
     update_result(status.upper())
+
+
+
